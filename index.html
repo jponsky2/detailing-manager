@@ -112,6 +112,7 @@
   .opt .t { font-size:16px; font-weight:600; } .opt .s { font-size:13px; color:var(--muted); margin-top:2px; }
   .opt .p { font-size:16px; font-weight:700; white-space:nowrap; }
   .opt.svc { align-items:flex-start; }
+  .vicon { font-size:24px; margin-right:12px; vertical-align:-3px; }
   .opt-points { list-style:none; margin-top:8px; }
   .opt-points li { font-size:13px; color:#c7cbd1; padding-left:18px; position:relative; margin-top:4px; line-height:1.35; }
   .opt-points li:before { content:'✓'; position:absolute; left:0; color:var(--green); font-weight:700; }
@@ -387,6 +388,7 @@ function todayStr(){ const d=new Date(TODAY); return new Date(d.getTime()-d.getT
 let viewMonth = todayStr().slice(0,7);
 let calMonth = todayStr().slice(0,7);
 const VTYPES = ['Compact / Coupe','Medium-Sized Car','SUV / Truck','Large SUV / Van'];
+const VICON = { 'Compact / Coupe':'🚗', 'Medium-Sized Car':'🚙', 'SUV / Truck':'🛻', 'Large SUV / Van':'🚐' };
 function monthName(key){ const [y,m]=key.split('-'); return new Date(y,m-1,1).toLocaleString('en-US',{month:'long'}); }
 function monthLong(key){ const [y,m]=key.split('-'); return new Date(y,m-1,1).toLocaleString('en-US',{month:'long',year:'numeric'}); }
 function inMonth(dt,key){ return (dt||'').slice(0,7)===key; }
@@ -864,7 +866,7 @@ function renderBooking(){
   const dots=`<div class="step-dots">${[0,1,2,3,4,5].map(i=>`<i class="${i<=bk.step?'on':''}"></i>`).join('')}</div>`;
   let body='';
   if(bk.step===0){
-    body=`<h3>What kind of car do you have?</h3>`+VTYPES.map(v=>`<div class="opt ${bk.vtype===v?'on':''}" onclick="bkPick('vtype','${v}')"><div class="t">${v}</div></div>`).join('');
+    body=`<h3>What kind of car do you have?</h3>`+VTYPES.map(v=>`<div class="opt ${bk.vtype===v?'on':''}" onclick="bkPick('vtype','${v}')"><div class="t"><span class="vicon">${VICON[v]||'🚗'}</span>${v}</div></div>`).join('');
   } else if(bk.step===1){
     body=`<h3>Choose a service</h3>`+services.filter(s=>s.active).map(s=>`<div class="opt svc ${bk.service===s.name?'on':''}" onclick="bkPick('service','${s.name.replace(/'/g,"\\'")}')"><div><div class="t">${s.name}</div><div class="s">${s.duration} min</div>${(s.points&&s.points.length)?`<ul class="opt-points">${s.points.map(p=>`<li>${p}</li>`).join('')}</ul>`:''}</div><div class="p">${priceRange(s)}</div></div>`).join('');
   } else if(bk.step===2){
