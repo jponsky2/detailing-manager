@@ -111,6 +111,12 @@
   .opt.on { border-color:var(--accent); background:var(--accent-soft); }
   .opt .t { font-size:16px; font-weight:600; } .opt .s { font-size:13px; color:var(--muted); margin-top:2px; }
   .opt .p { font-size:16px; font-weight:700; white-space:nowrap; }
+  .opt.svc { align-items:flex-start; }
+  .opt-points { list-style:none; margin-top:8px; }
+  .opt-points li { font-size:13px; color:#c7cbd1; padding-left:18px; position:relative; margin-top:4px; line-height:1.35; }
+  .opt-points li:before { content:'✓'; position:absolute; left:0; color:var(--green); font-weight:700; }
+  .point-row { display:flex; gap:8px; align-items:center; margin-top:8px; }
+  .point-row input { flex:1; }
   .step-dots { display:flex; gap:6px; justify-content:center; margin:4px 0 14px; }
   .step-dots i { width:7px; height:7px; border-radius:50%; background:var(--panel-2); } .step-dots i.on { background:var(--accent); }
   .total-bar { display:flex; justify-content:space-between; align-items:center; background:var(--panel-2); border-radius:12px; padding:14px 16px; margin:16px 0; }
@@ -306,6 +312,7 @@ function migrate(){
   if(biz && !biz.profile){ biz.profile = defaultProfile(); persist(); }
   if(biz && biz.profile && biz.profile.about===undefined){ biz.profile.about = biz.profile.bio||''; persist(); }
   if(portfolio===null){ portfolio = defaultPortfolio(); persist(); }
+  if(services){ let changed=false; services.forEach(s=>{ if(!Array.isArray(s.points)){ s.points=defaultPoints(s.name); changed=true; } }); if(changed) persist(); }
 }
 function defaultProfile(){
   return { tagline:'Mobile detailing done right.', area:'Chagrin Falls & Greater Cleveland, OH',
@@ -314,13 +321,24 @@ function defaultProfile(){
 }
 function defaultServices(){
   return [
-    { id:uid(), name:'Full Car Detailing',           priceMin:150, priceMax:250, duration:180, active:true },
-    { id:uid(), name:'Basic Wash / Vacuum',          priceMin:40,  priceMax:70,  duration:45,  active:true },
-    { id:uid(), name:'Interior Only Detail',         priceMin:100, priceMax:160, duration:120, active:true },
-    { id:uid(), name:'Full Exterior Only Detail',    priceMin:90,  priceMax:150, duration:100, active:true },
-    { id:uid(), name:'Basic Exterior Only Detail',   priceMin:50,  priceMax:80,  duration:50,  active:true },
-    { id:uid(), name:'Basic Interior Only Detail',   priceMin:60,  priceMax:90,  duration:60,  active:true },
+    { id:uid(), name:'Full Car Detailing',           priceMin:150, priceMax:250, duration:180, active:true, points:defaultPoints('Full Car Detailing') },
+    { id:uid(), name:'Basic Wash / Vacuum',          priceMin:40,  priceMax:70,  duration:45,  active:true, points:defaultPoints('Basic Wash / Vacuum') },
+    { id:uid(), name:'Interior Only Detail',         priceMin:100, priceMax:160, duration:120, active:true, points:defaultPoints('Interior Only Detail') },
+    { id:uid(), name:'Full Exterior Only Detail',    priceMin:90,  priceMax:150, duration:100, active:true, points:defaultPoints('Full Exterior Only Detail') },
+    { id:uid(), name:'Basic Exterior Only Detail',   priceMin:50,  priceMax:80,  duration:50,  active:true, points:defaultPoints('Basic Exterior Only Detail') },
+    { id:uid(), name:'Basic Interior Only Detail',   priceMin:60,  priceMax:90,  duration:60,  active:true, points:defaultPoints('Basic Interior Only Detail') },
   ];
+}
+function defaultPoints(name){
+  const m={
+    'Full Car Detailing':['Full interior deep clean','Exterior hand wash & wax','Wheels & tires detailed','Windows cleaned in & out'],
+    'Basic Wash / Vacuum':['Exterior hand wash & dry','Interior vacuum','Windows cleaned','Tires dressed'],
+    'Interior Only Detail':['Deep vacuum & shampoo','Dashboard & console cleaned','Door panels wiped down','Interior windows'],
+    'Full Exterior Only Detail':['Hand wash & dry','Wax / sealant applied','Wheels & tires detailed','Bug & tar removal'],
+    'Basic Exterior Only Detail':['Hand wash & dry','Tires dressed','Exterior windows','Quick spray wax'],
+    'Basic Interior Only Detail':['Vacuum seats & floors','Wipe down surfaces','Interior windows','Trash removed'],
+  };
+  return m[name] ? [...m[name]] : [];
 }
 function defaultAddons(){
   return [
@@ -636,21 +654,38 @@ function daySheet(ds){
 function apptSheetForDay(ds){ apptSheet(null); setTimeout(()=>{ const el=document.getElementById('a_dt'); if(el) el.value=ds+'T10:00'; },30); }
 
 // ---------------- Service / Add-on / Expense sheets ----------------
+let svcPoints=[];
 function editService(id){
-  const s=id?services.find(x=>x.id===id):{active:true};
+  const s=id?services.find(x=>x.id===id):{active:true,points:[]};
+  svcPoints = Array.isArray(s.points)?[...s.points]:[];
   openSheet(`
     <h3>${id?'Edit':'New'} Service</h3>
     <label>Name</label><input id="s_name" value="${s.name||''}">
     <div class="frow"><div><label>Price from ($)</label><input id="s_pmin" type="number" value="${s.priceMin??''}"></div>
     <div><label>Price to ($)</label><input id="s_pmax" type="number" value="${s.priceMax??''}"></div></div>
     <label>Time to complete (minutes)</label><input id="s_dur" type="number" value="${s.duration||''}">
+    <label>What's included (bullet points)</label>
+    <div id="s_points"></div>
+    <button class="btn ghost sm" style="margin-top:8px" onclick="addSvcPoint()">+ Add point</button>
     <div class="chk"><input type="checkbox" id="s_active" ${s.active?'checked':''}><label style="margin:0">Show on booking page</label></div>
     <div class="sheet-actions"><button class="btn ghost" onclick="closeSheet()">Cancel</button><button class="btn" onclick="saveService('${id||''}')">Save</button></div>
     ${id?`<button class="btn danger" style="margin-top:10px" onclick="delService('${id}')">Delete</button>`:''}`);
+  renderSvcPoints();
 }
+function renderSvcPoints(){
+  const el=document.getElementById('s_points'); if(!el) return;
+  el.innerHTML = svcPoints.length ? svcPoints.map((p,i)=>`
+    <div class="point-row">
+      <input value="${(p||'').replace(/"/g,'&quot;')}" placeholder="e.g. Hand wash & dry" oninput="svcPoints[${i}]=this.value">
+      <button class="iconbtn" style="width:38px;height:38px;flex-shrink:0" onclick="removeSvcPoint(${i})">✕</button>
+    </div>`).join('') : '<p class="muted" style="font-size:13px;margin-top:6px">No points yet — add a few to describe this service.</p>';
+}
+function addSvcPoint(){ svcPoints.push(''); renderSvcPoints(); const inputs=document.querySelectorAll('#s_points input'); if(inputs.length) inputs[inputs.length-1].focus(); }
+function removeSvcPoint(i){ svcPoints.splice(i,1); renderSvcPoints(); }
 function saveService(id){
   const pmin=+val('s_pmin')||0; let pmax=+val('s_pmax')||pmin; if(pmax<pmin)pmax=pmin;
-  const d={ name:val('s_name').trim(), priceMin:pmin, priceMax:pmax, duration:+val('s_dur')||0, active:document.getElementById('s_active').checked };
+  const d={ name:val('s_name').trim(), priceMin:pmin, priceMax:pmax, duration:+val('s_dur')||0,
+    points:svcPoints.map(p=>(p||'').trim()).filter(Boolean), active:document.getElementById('s_active').checked };
   if(!d.name){ alert('Name required'); return; }
   if(id){ Object.assign(services.find(x=>x.id===id),d); } else { services.push({id:uid(),...d}); }
   persist(); closeSheet(); renderAll();
@@ -798,7 +833,7 @@ function renderPubPortfolio(){
 }
 function renderPubAbout(){
   const p=biz.profile||{};
-  const menu=services.filter(s=>s.active).map(s=>`<div class="menu-row"><div><div class="mn">${s.name}</div><div class="md">${s.duration} min</div></div><div style="font-weight:700">${priceRange(s)}</div></div>`).join('');
+  const menu=services.filter(s=>s.active).map(s=>`<div class="menu-row"><div><div class="mn">${s.name}</div><div class="md">${s.duration} min</div>${(s.points&&s.points.length)?`<ul class="opt-points">${s.points.map(p=>`<li>${p}</li>`).join('')}</ul>`:''}</div><div style="font-weight:700;white-space:nowrap">${priceRange(s)}</div></div>`).join('');
   document.getElementById('pubAbout').innerHTML=`
     <div class="card"><h3>About ${biz.name}</h3><p style="margin-top:8px;color:#d0d3d8">${p.about||'—'}</p></div>
     <div class="card"><h3>Services &amp; Pricing</h3><div style="margin-top:6px">${menu||'<p class="muted">No services listed.</p>'}</div></div>
@@ -831,7 +866,7 @@ function renderBooking(){
   if(bk.step===0){
     body=`<h3>What kind of car do you have?</h3>`+VTYPES.map(v=>`<div class="opt ${bk.vtype===v?'on':''}" onclick="bkPick('vtype','${v}')"><div class="t">${v}</div></div>`).join('');
   } else if(bk.step===1){
-    body=`<h3>Choose a service</h3>`+services.filter(s=>s.active).map(s=>`<div class="opt ${bk.service===s.name?'on':''}" onclick="bkPick('service','${s.name.replace(/'/g,"\\'")}')"><div><div class="t">${s.name}</div><div class="s">${s.duration} min</div></div><div class="p">${priceRange(s)}</div></div>`).join('');
+    body=`<h3>Choose a service</h3>`+services.filter(s=>s.active).map(s=>`<div class="opt svc ${bk.service===s.name?'on':''}" onclick="bkPick('service','${s.name.replace(/'/g,"\\'")}')"><div><div class="t">${s.name}</div><div class="s">${s.duration} min</div>${(s.points&&s.points.length)?`<ul class="opt-points">${s.points.map(p=>`<li>${p}</li>`).join('')}</ul>`:''}</div><div class="p">${priceRange(s)}</div></div>`).join('');
   } else if(bk.step===2){
     const act=addons.filter(a=>a.active);
     body=`<h3>Add-ons <span class="muted" style="font-weight:400;font-size:14px">(optional)</span></h3>`+(act.length?act.map(a=>`<div class="opt ${bk.addons.includes(a.name)?'on':''}" onclick="bkToggle('${a.name.replace(/'/g,"\\'")}')"><div class="t">${a.name}</div><div class="p">+${money(a.price)}</div></div>`).join(''):'<p class="muted">No add-ons available.</p>');
