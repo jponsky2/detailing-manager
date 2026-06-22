@@ -83,8 +83,8 @@
   nav.tabbar { position:fixed; bottom:12px; left:50%; transform:translateX(-50%); width:calc(100% - 24px); max-width:576px;
     background:rgba(28,28,30,.92); backdrop-filter:blur(20px); border:1px solid var(--border); border-radius:26px;
     display:flex; justify-content:space-around; padding:8px 2px; z-index:50; }
-  nav.tabbar button { background:none; border:none; color:var(--muted); cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:3px; font-size:10px; font-weight:600; padding:4px 6px; border-radius:14px; flex:1; }
-  nav.tabbar button .ti { font-size:20px; } nav.tabbar button.active { color:var(--accent); }
+  nav.tabbar button { background:none; border:none; color:var(--muted); cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:2px; font-size:9px; font-weight:600; padding:4px 2px; border-radius:14px; flex:1; }
+  nav.tabbar button .ti { font-size:18px; } nav.tabbar button.active { color:var(--accent); }
   .sheet-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:100; }
   .sheet-bg.open { display:block; }
   .sheet { position:fixed; left:50%; transform:translateX(-50%) translateY(100%); bottom:0; width:100%; max-width:600px; max-height:92vh; overflow-y:auto;
@@ -244,6 +244,18 @@
     </div>
   </section>
 
+  <!-- INVOICES -->
+  <section id="invoices" class="view">
+    <div class="top"><h1>Invoices</h1></div>
+    <div class="cust-stats" id="invStats"></div>
+    <div class="sub-tabs">
+      <button id="invf_all" class="active" onclick="setInvFilter('all')">All</button>
+      <button id="invf_unpaid" onclick="setInvFilter('unpaid')">Unpaid</button>
+      <button id="invf_paid" onclick="setInvFilter('paid')">Paid</button>
+    </div>
+    <div id="invList"></div>
+  </section>
+
   <!-- REPORTS -->
   <section id="reports" class="view">
     <div class="top"><h1>Reports</h1></div>
@@ -331,6 +343,7 @@
   <button data-view="bookings" onclick="go('bookings')"><span class="ti">📥</span>Bookings<span class="nav-badge" id="bkNavBadge"></span></button>
   <button data-view="customers" onclick="go('customers')"><span class="ti">👥</span>Clients</button>
   <button data-view="schedule" onclick="go('schedule')"><span class="ti">🗓️</span>Schedule</button>
+  <button data-view="invoices" onclick="go('invoices')"><span class="ti">🧾</span>Invoices</button>
   <button data-view="reports" onclick="go('reports')"><span class="ti">📊</span>Reports</button>
   <button data-view="settings" onclick="go('settings')"><span class="ti">⚙️</span>Setup</button>
 </nav>
@@ -416,8 +429,8 @@ function seed(){
   const d3=new Date(Date.now()+3*86400000); const ds3=new Date(d3.getTime()-d3.getTimezoneOffset()*60000).toISOString().slice(0,10);
   const d5=new Date(Date.now()+5*86400000); const ds5=new Date(d5.getTime()-d5.getTimezoneOffset()*60000).toISOString().slice(0,10);
   appointments=[
-    { id:uid(), customerId:customers[0].id, datetime:'2026-03-26T10:00', serviceName:'Full Car Detailing', vehicleType:'Large SUV / Van', addonNames:[], price:200, status:'completed', tip:0, discount:0 },
-    { id:uid(), customerId:customers[1].id, datetime:'2026-03-28T13:00', serviceName:'Full Exterior Only Detail', vehicleType:'SUV / Truck', addonNames:[], price:130, status:'completed', tip:0, discount:0 },
+    { id:uid(), customerId:customers[0].id, datetime:'2026-03-26T10:00', serviceName:'Full Car Detailing', vehicleType:'Large SUV / Van', addonNames:[], price:200, status:'completed', tip:0, discount:0, paid:true },
+    { id:uid(), customerId:customers[1].id, datetime:'2026-03-28T13:00', serviceName:'Full Exterior Only Detail', vehicleType:'SUV / Truck', addonNames:[], price:130, status:'completed', tip:0, discount:0, paid:false },
     { id:uid(), customerId:lead.id, datetime:ds3+'T11:00', serviceName:'Full Car Detailing', vehicleType:'SUV / Truck', addonNames:['Pet Hair Removal'], price:190, discount:0, tip:0, status:'requested', source:'booking', reminderSent:false, notes:'' },
     { id:uid(), customerId:customers[0].id, datetime:ds5+'T10:00', serviceName:'Interior Only Detail', vehicleType:'Large SUV / Van', addonNames:[], price:120, discount:0, tip:0, status:'scheduled', notes:'' } ];
   expenses=[]; goals={ revenue:5000 }; persist();
@@ -649,7 +662,7 @@ function renderSettings(){
 }
 function stars(n){ n=+n||0; return '★'.repeat(n)+'☆'.repeat(5-n); }
 
-function renderAll(){ renderDashboard(); renderBookings(); renderCustomers(); renderSchedule(); renderReports(); renderSettings(); }
+function renderAll(){ renderDashboard(); renderBookings(); renderCustomers(); renderSchedule(); renderInvoices(); renderReports(); renderSettings(); }
 
 // ================= Sheet helpers =================
 const sheetBg=document.getElementById('sheetBg'), sheet=document.getElementById('sheet');
@@ -1046,7 +1059,7 @@ function showReceipt(id,isQuote){
       <div><strong>${isQuote?'ESTIMATE':'Invoice #'+a.invoiceNo}</strong><br><span class="muted">${fmtDate(a.datetime)}</span></div>
       <div style="text-align:right"><strong>${isQuote?'Prepared for':'Billed to'}</strong><br>${c?c.name:''}<br><span class="muted">${c?c.phone:''}</span></div></div>
     <table><tbody>${rows}${sub}<tr class="tot"><td>${isQuote?'Estimated total':'Total'}</td><td style="text-align:right">${money(apptTotal(a))}</td></tr></tbody></table>
-    <div class="muted" style="font-size:13px">${isQuote?'Estimate valid 30 days. Final price may vary by vehicle condition.':(a.status==='completed'?'✓ PAID':'Balance due on service')}</div>
+    <div class="muted" style="font-size:13px">${isQuote?'Estimate valid 30 days. Final price may vary by vehicle condition.':(a.paid?'✓ PAID':'Balance due')}</div>
     <div class="no-print" style="margin-top:20px;display:flex;gap:10px"><button class="btn" onclick="window.print()">Print / Save PDF</button><button class="btn ghost" onclick="hideReceipt()">Close</button></div></div>`;
   document.getElementById('receipt').classList.add('show'); closeSheet();
 }
@@ -1119,7 +1132,7 @@ function completedCard(a){
 }
 function confirmRequest(id){ const a=appointments.find(x=>x.id===id); if(!a)return; a.status='scheduled'; persist(); renderAll(); alert('Booking confirmed — moved to Upcoming.'); }
 function declineRequest(id){ if(!confirm('Decline this request?'))return; const a=appointments.find(x=>x.id===id); if(a){ a.status='cancelled'; persist(); } renderAll(); }
-function completeAppt(id){ const a=appointments.find(x=>x.id===id); if(!a)return; a.status='completed'; persist(); bookingsTab='completed'; renderAll(); }
+function completeAppt(id){ const a=appointments.find(x=>x.id===id); if(!a)return; a.status='completed'; if(!a.invoiceNo)a.invoiceNo=nextInvoiceNo(); if(a.paid===undefined)a.paid=false; persist(); bookingsTab='completed'; renderAll(); }
 function addTip(id){ const a=appointments.find(x=>x.id===id); if(!a)return; const t=prompt('Tip amount ($):', a.tip||''); if(t===null)return; a.tip=+t||0; persist(); renderAll(); }
 function apptMenu(id){
   openSheet(`<h3>Manage appointment</h3>
@@ -1157,6 +1170,34 @@ function bookingLinkAccessSheet(){
 }
 function smsBookingLink(){ window.location.href='sms:?&body='+encodeURIComponent('Book your detail here: '+bookingURL()); }
 function shareBookingLink(){ const url=bookingURL(); if(navigator.share){ navigator.share({title:biz.name||'Booking',text:'Book your detail here:',url}).catch(()=>{}); } else copyBookingLink(); }
+
+// ================= Invoices page =================
+let invFilter='all';
+function setInvFilter(f){ invFilter=f; renderInvoices(); }
+function ensureInvoiceNos(){ let ch=false; appointments.filter(a=>a.status==='completed'&&!a.invoiceNo).forEach(a=>{ a.invoiceNo=nextInvoiceNo(); ch=true; }); if(ch) persist(); }
+function renderInvoices(){
+  const stats=document.getElementById('invStats'); if(!stats) return;
+  ensureInvoiceNos();
+  const inv=appointments.filter(a=>a.status==='completed');
+  const outstanding=inv.filter(a=>!a.paid).reduce((s,a)=>s+apptTotal(a),0);
+  const paidMo=inv.filter(a=>a.paid&&inMonth(a.datetime,todayStr().slice(0,7))).reduce((s,a)=>s+apptTotal(a),0);
+  stats.innerHTML=`<div><div class="n">${inv.length}</div><div class="l">Invoices</div></div><div><div class="n red">${money(outstanding)}</div><div class="l">Outstanding</div></div><div><div class="n green">${money(paidMo)}</div><div class="l">Paid (mo)</div></div>`;
+  ['all','unpaid','paid'].forEach(f=>{ const el=document.getElementById('invf_'+f); if(el) el.classList.toggle('active',invFilter===f); });
+  let list=inv.slice();
+  if(invFilter==='unpaid') list=list.filter(a=>!a.paid);
+  else if(invFilter==='paid') list=list.filter(a=>a.paid);
+  list.sort((a,b)=>(b.invoiceNo||0)-(a.invoiceNo||0));
+  document.getElementById('invList').innerHTML=list.length?list.map(invCard).join(''):`<div class="empty"><span class="ic">🧾</span>No invoices here. Completing a job creates one.</div>`;
+}
+function invCard(a){
+  const c=cust(a.customerId);
+  return `<div class="bk-card">
+    <div class="bk-head"><div><div class="bk-name">#${a.invoiceNo} · ${c?c.name:''}</div><div class="bk-loc">${fmtDate(a.datetime)} · ${a.serviceName||''}</div></div>
+    <div style="text-align:right"><div class="bk-total ${a.paid?'green':''}">${money(apptTotal(a))}</div><span class="pill ${a.paid?'completed':'scheduled'}">${a.paid?'paid':'unpaid'}</span></div></div>
+    <div class="sheet-actions"><button class="btn ghost" onclick="togglePaid('${a.id}')">${a.paid?'Mark unpaid':'Mark paid'}</button><button class="btn ghost" onclick="showReceipt('${a.id}',false)">View / Print</button></div>
+    <button class="btn" style="margin-top:10px" onclick="shareAppt('${a.id}')">📤 Send invoice</button></div>`;
+}
+function togglePaid(id){ const a=appointments.find(x=>x.id===id); if(!a)return; a.paid=!a.paid; persist(); renderAll(); }
 
 // ================= Init =================
 loadAll(); renderAll();
