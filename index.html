@@ -392,6 +392,7 @@ function migrate(){
     if(s.durMin===undefined){ s.durMin=s.duration||60; s.durMax=s.duration||60; ch=true; }
     if(!Array.isArray(s.addonIds)){ s.addonIds=(addons||[]).map(a=>a.id); ch=true; }
   }); if(ch) persist(); }
+  if(appointments){ let ch=false; appointments.forEach(a=>{ if(a.staffIds===undefined){ a.staffIds=a.staffId?[a.staffId]:[]; ch=true; } }); if(ch) persist(); }
 }
 function defaultProfile(){ return { tagline:'Mobile detailing done right.', area:'Chagrin Falls & Greater Cleveland, OH', phone:'440-555-0100', email:'hello@scrubandsquish.com', about:'We bring premium auto detailing right to your driveway. Locally owned, fully insured, and obsessed with the details. Book online in under a minute.', zips:[] }; }
 function defaultHours(){ return [
@@ -493,7 +494,7 @@ function go(view){
 function monthRevenue(k){ return appointments.filter(a=>a.status==='completed'&&inMonth(a.datetime,k)).reduce((s,a)=>s+apptEarnings(a),0); }
 function monthExpenses(k){ return expenses.filter(e=>inMonth(e.date,k)).reduce((s,e)=>s+(+e.amount||0),0); }
 function confirmedAppt(a){ return a.status==='scheduled'||a.status==='completed'; }
-function monthBooked(k){ return appointments.filter(a=>confirmedAppt(a)&&inMonth(a.datetime,k)&&(!staffFilter||a.staffId===staffFilter)); }
+function monthBooked(k){ return appointments.filter(a=>confirmedAppt(a)&&inMonth(a.datetime,k)&&(!staffFilter||apptStaffIds(a).includes(staffFilter))); }
 function custSpend(id){ return appointments.filter(a=>a.customerId===id&&a.status==='completed').reduce((s,a)=>s+apptEarnings(a),0); }
 function custVisits(id){ return appointments.filter(a=>a.customerId===id&&a.status==='completed').length; }
 
@@ -516,7 +517,7 @@ function renderDashboard(){
 }
 function statCard(c,i,n,l){ return `<div class="stat"><div class="badge ${c}">${i}</div><div><div class="num">${n}</div><div class="lbl">${l}</div></div></div>`; }
 function apptRow(a){
-  const st=a.staffId?` · ${staffName(a.staffId)}`:'';
+  const st=staffNames(a)?` · ${staffNames(a)}`:'';
   return `<div class="list-item" onclick="apptSheet('${a.id}')">
     <div><div class="li-title">${custName(a.customerId)}</div>
     <div class="li-sub">${fmtTime(a.datetime)} · ${a.serviceName||'Service'}${st}</div></div>
@@ -617,7 +618,7 @@ function renderSchedule(){
 }
 function cell(date,dim){
   const ds=new Date(date.getTime()-date.getTimezoneOffset()*60000).toISOString().slice(0,10);
-  const appts=appointments.filter(a=>a.datetime.slice(0,10)===ds&&confirmedAppt(a)&&(!staffFilter||a.staffId===staffFilter));
+  const appts=appointments.filter(a=>a.datetime.slice(0,10)===ds&&confirmedAppt(a)&&(!staffFilter||apptStaffIds(a).includes(staffFilter)));
   const isToday=ds===todayStr();
   let dots=''; if(appts.length){ dots='<div class="dot">'+appts.slice(0,3).map(a=>`<i class="${a.status==='completed'?'done':''}"></i>`).join('')+'</div>'; }
   return `<div class="cal-cell ${dim?'dim':''} ${isToday?'today':''}" onclick="daySheet('${ds}')">${date.getDate()}${dots}</div>`;
@@ -752,15 +753,24 @@ function scheduleNext(id){
 }
 
 // ================= Appointment sheets (admin) =================
-let apptAddons=[];
-function apptSheet(id, presetCust){
+let apptAddons=[], apptStaff=[];
+function apptStaffIds(a){ return a.staffIds||(a.staffId?[a.staffId]:[]); }
+function staffNames(a){ return apptStaffIds(a).map(staffName).filter(Boolean).join(', '); }
+function renderApptStaff(){ const el=document.getElementById('a_staff'); if(!el) return; const chips=(biz.staff||[]).filter(s=>s.active||apptStaff.includes(s.id)); el.innerHTML=chips.length?chips.map(s=>`<span class="addon-chip ${apptStaff.includes(s.id)?'on':''}" onclick="toggleStaff('${s.id}')">${s.name}</span>`).join(''):'<span class="muted">No team members yet</span>'; }
+function toggleStaff(id){ const i=apptStaff.indexOf(id); if(i>=0)apptStaff.splice(i,1); else apptStaff.push(id); renderApptStaff(); }
+function apptSheet(id, presetCust, preset){
   if(customers.length===0){ alert('Add a customer first.'); return; }
   const a=id?appointments.find(x=>x.id===id):{};
   apptAddons=a.addonNames?[...a.addonNames]:[];
-  const dt=a.datetime||todayStr()+'T10:00';
-  const staffSel=(biz.staff||[]).length?`<label>Assigned to</label><select id="a_staff">${staffOptions(a.staffId)}</select>`:'';
+  apptStaff=apptStaffIds(a).slice();
+  preset=preset||{};
+  const defStatus=preset.status||a.status||'scheduled';
+  const defPaid=a.paid!==undefined?a.paid:!!preset.paid;
+  const dt=a.datetime||((preset.date||todayStr())+'T10:00');
+  const title=preset.title||((id?'Edit':'New')+' Appointment');
+  const staffSel=(biz.staff||[]).length?`<label>Team members (tap to assign)</label><div id="a_staff"></div>`:'';
   openSheet(`
-    <h3>${id?'Edit':'New'} Appointment</h3>
+    <h3>${title}</h3>
     <label>Customer</label><select id="a_cust">${custOptions(a.customerId||presetCust)}</select>
     ${staffSel}
     <label>Vehicle type</label><select id="a_vtype" onchange="recalcPrice()">${vtypeOptions(a.vehicleType)}</select>
@@ -770,19 +780,25 @@ function apptSheet(id, presetCust){
     <div class="frow"><div><label>Price (subtotal)</label><input id="a_price" type="number" value="${a.price!=null?a.price:''}"></div>
     <div><label>Discount $</label><input id="a_disc" type="number" value="${a.discount||''}"></div></div>
     <div class="frow"><div><label>Tip $</label><input id="a_tip" type="number" value="${a.tip||''}"></div>
-    <div><label>Status</label><select id="a_statusSel">${['scheduled','completed','cancelled'].map(s=>`<option ${(a.status||'scheduled')===s?'selected':''}>${s}</option>`).join('')}</select></div></div>
+    <div><label>Status</label><select id="a_statusSel">${['scheduled','completed','cancelled'].map(s=>`<option ${defStatus===s?'selected':''}>${s}</option>`).join('')}</select></div></div>
+    <div class="chk"><input type="checkbox" id="a_paid" ${defPaid?'checked':''}><label style="margin:0">Paid</label></div>
     <label>Notes</label><textarea id="a_notes" rows="2" placeholder="Gate code, special requests...">${a.notes||''}</textarea>
     <div class="sheet-actions"><button class="btn ghost" onclick="closeSheet()">Cancel</button><button class="btn" onclick="saveAppt('${id||''}')">Save</button></div>
     ${id?`<div class="sheet-actions"><button class="btn ghost" onclick="showReceipt('${id}',false)">🧾 Invoice</button><button class="btn ghost" onclick="showReceipt('${id}',true)">📄 Quote</button></div>
     <div class="sheet-actions"><button class="btn ghost" onclick="downloadICS('${id}')">📅 Calendar</button><button class="btn ghost" onclick="sendReminder('${id}')">🔔 Reminder</button></div>
     <button class="btn danger" style="margin-top:10px" onclick="delAppt('${id}')">Delete Appointment</button>`:''}`);
+  renderApptStaff();
   if(!id) recalcPrice();
 }
+function logPastJob(){ apptSheet(null, null, { status:'completed', paid:true, title:'Log Past Job' }); }
 function recalcPrice(){ const s=svcByName(val('a_svc')); let p=svcPrice(s, val('a_vtype')); apptAddons.forEach(n=>{ const ad=addons.find(x=>x.name===n); if(ad)p+=ad.price; }); document.getElementById('a_price').value=p; }
 function toggleAddon(name){ const i=apptAddons.indexOf(name); if(i>=0)apptAddons.splice(i,1); else apptAddons.push(name); document.querySelectorAll('#a_addons .addon-chip').forEach(c=>{ if(c.textContent.startsWith(name)) c.classList.toggle('on'); }); recalcPrice(); }
 function saveAppt(id){
-  const d={ customerId:val('a_cust'), staffId:(document.getElementById('a_staff')?val('a_staff'):(id?appointments.find(x=>x.id===id)?.staffId:'')||''), vehicleType:val('a_vtype'), datetime:val('a_dt'), serviceName:val('a_svc'), addonNames:[...apptAddons], price:+val('a_price')||0, discount:+val('a_disc')||0, tip:+val('a_tip')||0, status:val('a_statusSel'), notes:val('a_notes') };
-  if(id){ Object.assign(appointments.find(x=>x.id===id),d); } else { appointments.push({id:uid(),...d}); }
+  const existing=id?appointments.find(x=>x.id===id):null;
+  const status=val('a_statusSel');
+  const d={ customerId:val('a_cust'), staffIds:[...apptStaff], vehicleType:val('a_vtype'), datetime:val('a_dt'), serviceName:val('a_svc'), addonNames:[...apptAddons], price:+val('a_price')||0, discount:+val('a_disc')||0, tip:+val('a_tip')||0, status, notes:val('a_notes'), paid:document.getElementById('a_paid').checked };
+  if(status==='completed'){ d.invoiceNo=(existing&&existing.invoiceNo)||nextInvoiceNo(); }
+  if(existing){ Object.assign(existing,d); } else { appointments.push({id:uid(),...d}); }
   persist(); closeSheet(); renderAll();
 }
 function delAppt(id){ if(!confirm('Delete this appointment?'))return; appointments=appointments.filter(a=>a.id!==id); persist(); closeSheet(); renderAll(); }
@@ -1110,7 +1126,8 @@ function renderBookings(){
   } else if(t==='upcoming'){
     html=up.length?up.map(upcomingCard).join(''):`<div class="empty"><span class="ic">🗓️</span>No upcoming details. Confirm a request to see it here.</div>`;
   } else {
-    html=done.length?done.map(completedCard).join(''):`<div class="empty"><span class="ic">✅</span>No completed details yet.</div>`;
+    html=`<button class="btn" style="margin-bottom:12px" onclick="logPastJob()">＋ Log a past job</button>`
+      +(done.length?done.map(completedCard).join(''):`<div class="empty"><span class="ic">✅</span>No completed details yet. Use “Log a past job” to add one you already did.</div>`);
   }
   body.innerHTML=html;
   if(t==='upcoming') initSwipes();
