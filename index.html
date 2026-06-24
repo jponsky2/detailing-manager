@@ -161,6 +161,7 @@
   .swipe { position:relative; height:54px; border-radius:14px; background:var(--green-soft); overflow:hidden; user-select:none; margin-top:14px; touch-action:none; }
   .swipe-label { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--green); font-weight:700; font-size:15px; padding-left:30px; }
   .swipe-thumb { position:absolute; top:4px; left:4px; width:46px; height:46px; border-radius:11px; background:var(--green); color:#fff; display:grid; place-items:center; font-size:22px; z-index:2; cursor:grab; }
+  .swipe.start { background:var(--accent-soft); } .swipe.start .swipe-label { color:#4aa8ff; } .swipe.start .swipe-thumb { background:var(--accent); }
   nav.tabbar button { position:relative; }
   .nav-badge { position:absolute; top:0; right:8px; background:var(--red); color:#fff; font-size:9px; font-weight:800; min-width:15px; height:15px; border-radius:8px; display:none; align-items:center; justify-content:center; padding:0 3px; }
   /* Client database */
@@ -1132,6 +1133,7 @@ function renderBookings(){
   }
   body.innerHTML=html;
   if(t==='upcoming') initSwipes();
+  ensureJobClock();
 }
 function locOf(a){ const c=cust(a.customerId); return (c&&c.address)||'No address on file'; }
 function apptLines(a){
@@ -1172,11 +1174,26 @@ function savePropose(id){
 }
 function upcomingCard(a){
   const c=cust(a.customerId);
+  const running=a.startedAt&&!a.finishedAt;
+  const progress=running?`<div style="margin-top:10px;display:flex;align-items:center;gap:8px"><span class="pill completed">● In progress</span><span class="muted" style="font-size:13px">Started ${fmtTime(a.startedAt)} · running ${fmtDur(elapsedMins(a))}</span></div>`:'';
+  const slider=running
+    ? `<div class="swipe" data-id="${a.id}" data-action="finish"><div class="swipe-label">Swipe to finish →</div><div class="swipe-thumb">→</div></div>`
+    : `<div class="swipe start" data-id="${a.id}" data-action="start"><div class="swipe-label">Swipe to start job →</div><div class="swipe-thumb">→</div></div>`;
   return `<div class="bk-card">
     <div class="bk-head"><div><div class="bk-name">${c?c.name:''}</div><div class="bk-loc">📍 ${locOf(a)}</div></div>
     <button class="bk-dots" onclick="apptMenu('${a.id}')">⋯</button></div>
-    <div class="bk-lines">${apptLines(a)}</div>${metaOf(a)}
-    <div class="swipe" data-id="${a.id}"><div class="swipe-label">Swipe to complete →</div><div class="swipe-thumb">→</div></div></div>`;
+    <div class="bk-lines">${apptLines(a)}</div>${metaOf(a)}${progress}${slider}</div>`;
+}
+function elapsedMins(a){ return a.startedAt?(Date.now()-new Date(a.startedAt).getTime())/60000:0; }
+function fmtDur(mins){ mins=Math.max(0,Math.round(mins)); const h=Math.floor(mins/60), m=mins%60; return (h?h+'h ':'')+m+'m'; }
+function textCustomer(a,tmpl){ const c=cust(a.customerId); const first=c?c.name.split(' ')[0]:'there'; const msg=tmpl.replace('NAME',first); if(c&&c.phone){ window.location.href='sms:'+c.phone.replace(/[^0-9+]/g,'')+'?&body='+encodeURIComponent(msg); } else if(navigator.share){ navigator.share({text:msg}).catch(()=>{}); } }
+function startJob(id){ const a=appointments.find(x=>x.id===id); if(!a)return; a.startedAt=new Date().toISOString(); a.finishedAt=''; persist(); renderAll(); textCustomer(a, `Hi NAME, ${biz.name} has started your ${a.serviceName}! We'll text you the moment it's done.`); }
+function finishJob(id){ const a=appointments.find(x=>x.id===id); if(!a)return; a.finishedAt=new Date().toISOString(); if(a.startedAt) a.durationMins=Math.round((new Date(a.finishedAt).getTime()-new Date(a.startedAt).getTime())/60000); a.status='completed'; if(!a.invoiceNo)a.invoiceNo=nextInvoiceNo(); if(a.paid===undefined)a.paid=false; persist(); bookingsTab='completed'; renderAll(); textCustomer(a, `Your ${a.serviceName} with ${biz.name} is all done${a.durationMins?` (finished in ${fmtDur(a.durationMins)})`:''}! Thanks so much — we'd love a review.`); }
+let jobClock=null;
+function ensureJobClock(){
+  const running=appointments.some(a=>a.status==='scheduled'&&a.startedAt&&!a.finishedAt);
+  if(running&&!jobClock){ jobClock=setInterval(()=>{ if(document.getElementById('bookings').classList.contains('active')&&bookingsTab==='upcoming') renderBookings(); },30000); }
+  else if(!running&&jobClock){ clearInterval(jobClock); jobClock=null; }
 }
 function completedCard(a){
   const c=cust(a.customerId);
@@ -1185,6 +1202,7 @@ function completedCard(a){
     <div style="text-align:right"><div class="bk-total green">${money(apptTotal(a))}</div><span class="pill completed">completed</span></div></div>
     <div class="bk-lines">${apptLines(a)}</div>
     ${apptTip(a)?`<div class="bk-line"><span>Tip</span><span class="green">${money(apptTip(a))}</span></div>`:''}
+    ${a.durationMins?`<div class="bk-line"><span>⏱ Time on job</span><span>${fmtDur(a.durationMins)}</span></div>`:''}
     ${metaOf(a)}
     <div class="sheet-actions"><button class="btn ghost" onclick="addTip('${a.id}')">${apptTip(a)?'Edit tip':'＋ Add tip'}</button><button class="btn ghost" onclick="showReceipt('${a.id}',false)">🧾 Invoice</button></div></div>`;
 }
@@ -1213,7 +1231,8 @@ function initSwipes(){
     let dragging=false,startX=0,max=0,x=0;
     thumb.addEventListener('pointerdown',e=>{ dragging=true; startX=e.clientX; max=sw.clientWidth-thumb.offsetWidth-8; thumb.style.transition=''; try{thumb.setPointerCapture(e.pointerId);}catch(_){} });
     thumb.addEventListener('pointermove',e=>{ if(!dragging)return; x=Math.max(0,Math.min(max,e.clientX-startX)); thumb.style.transform='translateX('+x+'px)'; });
-    const end=()=>{ if(!dragging)return; dragging=false; if(x>=max-6){ thumb.style.transform='translateX('+max+'px)'; completeAppt(id); } else { thumb.style.transition='transform .2s'; thumb.style.transform='translateX(0)'; } x=0; };
+    const action=sw.dataset.action||'finish';
+    const end=()=>{ if(!dragging)return; dragging=false; if(x>=max-6){ thumb.style.transform='translateX('+max+'px)'; if(action==='start') startJob(id); else finishJob(id); } else { thumb.style.transition='transform .2s'; thumb.style.transform='translateX(0)'; } x=0; };
     thumb.addEventListener('pointerup',end); thumb.addEventListener('pointercancel',end);
   });
 }
